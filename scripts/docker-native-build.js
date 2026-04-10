@@ -41,6 +41,12 @@ const TARGETS = [
     abi: 'musl',
     napiPlatform: 'linux-arm64-musl',
   },
+  {
+    target: 'x86_64-pc-windows-msvc',
+    arch: 'x86_64',
+    abi: 'msvc',
+    napiPlatform: 'win32-x64-msvc',
+  },
 ]
 
 // Map uname -m to our arch names

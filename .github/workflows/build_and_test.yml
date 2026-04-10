@@ -71,20 +71,27 @@ jobs:
     with:
       skipInstallBuild: 'yes'
       stepName: 'build-native'
+      uploadNativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   build-native-windows:
     name: build-native-windows
-    uses: ./.github/workflows/build_reusable.yml
+    runs-on: ['self-hosted', 'linux', 'x64', 'metal']
     needs: ['changes']
     if: ${{ needs.changes.outputs.docs-only == 'false' }}
-    with:
-      skipInstallBuild: 'yes'
-      stepName: 'build-native-windows'
-      runs_on_labels: '["windows","self-hosted","x64"]'
-      buildNativeTarget: 'x86_64-pc-windows-msvc'
-
-    secrets: inherit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 25
+      - name: Build Windows native binary via Docker cross-compilation
+        run: node scripts/docker-native-build.js --quick x86_64-pc-windows-msvc
+      - name: Upload Windows native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-swc-windows
+          path: packages/next-swc/native/next-swc.win32-x64-msvc.node
+          retention-days: 1
+          compression-level: 0
 
   build-next:
     name: build-next
@@ -180,6 +187,7 @@ jobs:
     with:
       afterBuild: pnpm types-and-precompiled
       stepName: 'types-and-precompiled'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-cargo-unit:
@@ -267,6 +275,7 @@ jobs:
           ${{ matrix.mode }} \
           ${{ matrix.selector }}
       stepName: 'devlow-bench-${{ matrix.mode }}-${{ matrix.selector }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-devlow:
@@ -319,6 +328,7 @@ jobs:
           -g ${{ matrix.group }}
       testTimingsArtifact: 'test-timings'
       stepName: 'test-turbopack-dev-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-turbopack-integration:
@@ -372,6 +382,7 @@ jobs:
           --type integration
       testTimingsArtifact: 'test-timings'
       stepName: 'test-turbopack-integration-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-turbopack-production:
@@ -409,6 +420,7 @@ jobs:
         node run-tests.js --timings --require-timings -g ${{ matrix.group }} --type production
       testTimingsArtifact: 'test-timings'
       stepName: 'test-turbopack-production-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-rspack-dev:
@@ -454,6 +466,7 @@ jobs:
           -g ${{ matrix.group }}
       testTimingsArtifact: 'test-timings'
       stepName: 'test-rspack-dev-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-rspack-integration:
@@ -500,6 +513,7 @@ jobs:
           --type integration
       testTimingsArtifact: 'test-timings'
       stepName: 'test-rspack-integration-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-rspack-production:
@@ -542,6 +556,7 @@ jobs:
         node run-tests.js --timings --require-timings -g ${{ matrix.group }} --type production
       testTimingsArtifact: 'test-timings'
       stepName: 'test-rspack-production-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-rspack-production-integration:
@@ -588,6 +603,7 @@ jobs:
           --type integration
       testTimingsArtifact: 'test-timings'
       stepName: 'test-rspack-production-integration-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-next-swc-wasm:
@@ -649,6 +665,7 @@ jobs:
       nodeVersion: ${{ matrix.node }}
       afterBuild: node run-tests.js --type unit
       stepName: 'test-unit-${{ matrix.node }}'
+      nativeArtifact: 'next-swc-linux'
 
     secrets: inherit
 
@@ -671,6 +688,7 @@ jobs:
         export __NEXT_EXPERIMENTAL_STRICT_ROUTE_TYPES=true
         NEXT_TEST_MODE=dev NODE_OPTIONS=--experimental-transform-types node run-tests.js test/e2e/app-dir/next-config-ts-native-ts/**/*.test.ts test/e2e/app-dir/next-config-ts-native-mts/**/*.test.ts
       stepName: 'test-next-config-ts-native-ts-dev-${{ matrix.node }}'
+      nativeArtifact: 'next-swc-linux'
 
     secrets: inherit
 
@@ -693,12 +711,13 @@ jobs:
         export __NEXT_EXPERIMENTAL_STRICT_ROUTE_TYPES=true
         NEXT_TEST_MODE=start NODE_OPTIONS=--experimental-transform-types node run-tests.js test/e2e/app-dir/next-config-ts-native-ts/**/*.test.ts test/e2e/app-dir/next-config-ts-native-mts/**/*.test.ts
       stepName: 'test-next-config-ts-native-ts-prod-${{ matrix.node }}'
+      nativeArtifact: 'next-swc-linux'
 
     secrets: inherit
 
   test-unit-windows:
     name: test unit windows
-    needs: ['changes', 'build-native', 'build-native-windows']
+    needs: ['changes', 'build-native-windows', 'build-next']
     if: ${{ needs.changes.outputs.docs-only == 'false' }}
 
     strategy:
@@ -712,7 +731,7 @@ jobs:
       afterBuild: node run-tests.js --type unit
       stepName: 'test-unit-windows-${{ matrix.node }}'
       runs_on_labels: '["windows","self-hosted","x64"]'
-      buildNativeTarget: 'x86_64-pc-windows-msvc'
+      nativeArtifact: 'next-swc-windows'
 
     secrets: inherit
 
@@ -738,6 +757,7 @@ jobs:
           --group ${{ matrix.group }}
       stepName: 'test-new-tests-dev-${{matrix.group}}'
       timeout_minutes: 60 # Increase the default timeout as tests are intentionally run multiple times to detect flakes
+      nativeArtifact: 'next-swc-linux'
 
     secrets: inherit
 
@@ -763,6 +783,7 @@ jobs:
           --group ${{ matrix.group }}
       stepName: 'test-new-tests-start-${{matrix.group}}'
       timeout_minutes: 60 # Increase the default timeout as tests are intentionally run multiple times to detect flakes
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-new-tests-deploy:
@@ -789,6 +810,7 @@ jobs:
           --mode deploy \
           --group ${{ matrix.group }}
       stepName: 'test-new-tests-deploy-${{matrix.group}}'
+      nativeArtifact: 'next-swc-linux'
 
     secrets: inherit
 
@@ -823,6 +845,7 @@ jobs:
           --mode deploy \
           --group ${{ matrix.group }}
       stepName: 'test-new-tests-deploy-cache-components-${{matrix.group}}'
+      nativeArtifact: 'next-swc-linux'
 
     secrets: inherit
 
@@ -862,6 +885,7 @@ jobs:
           --type development
       testTimingsArtifact: 'test-timings'
       stepName: 'test-dev-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-dev-windows:
@@ -871,7 +895,6 @@ jobs:
         'optimize-ci',
         'changes',
         'build-native-windows',
-        'build-native',
         'build-next',
       ]
     if: ${{ needs.optimize-ci.outputs.skip == 'false' && needs.changes.outputs.docs-only == 'false' }}
@@ -891,7 +914,7 @@ jobs:
           test/development/app-dir/segment-explorer/segment-explorer.test.ts
       stepName: 'test-dev-windows'
       runs_on_labels: '["windows","self-hosted","x64"]'
-      buildNativeTarget: 'x86_64-pc-windows-msvc'
+      nativeArtifact: 'next-swc-windows'
     secrets: inherit
 
   test-integration-windows:
@@ -901,7 +924,6 @@ jobs:
         'optimize-ci',
         'changes',
         'build-native-windows',
-        'build-native',
         'build-next',
       ]
     if: ${{ needs.optimize-ci.outputs.skip == 'false' && needs.changes.outputs.docs-only == 'false' }}
@@ -921,7 +943,7 @@ jobs:
           test/integration/create-next-app/package-manager/pnpm.test.ts
       stepName: 'test-integration-windows'
       runs_on_labels: '["windows","self-hosted","x64"]'
-      buildNativeTarget: 'x86_64-pc-windows-msvc'
+      nativeArtifact: 'next-swc-windows'
     secrets: inherit
 
   test-prod-windows:
@@ -931,7 +953,6 @@ jobs:
         'optimize-ci',
         'changes',
         'build-native-windows',
-        'build-native',
         'build-next',
       ]
     if: ${{ needs.optimize-ci.outputs.skip == 'false' && needs.changes.outputs.docs-only == 'false' }}
@@ -951,7 +972,7 @@ jobs:
           test/e2e/app-dir/proxy-runtime-nodejs/proxy-runtime-nodejs.test.ts
       stepName: 'test-prod-windows'
       runs_on_labels: '["windows","self-hosted","x64"]'
-      buildNativeTarget: 'x86_64-pc-windows-msvc'
+      nativeArtifact: 'next-swc-windows'
     secrets: inherit
 
   test-prod:
@@ -986,6 +1007,7 @@ jobs:
         node run-tests.js --timings --require-timings -g ${{ matrix.group }} --type production
       testTimingsArtifact: 'test-timings'
       stepName: 'test-prod-react-${{ matrix.react }}-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-integration:
@@ -1038,6 +1060,7 @@ jobs:
           --type integration
       testTimingsArtifact: 'test-timings'
       stepName: 'test-integration-${{ matrix.group }}-react-${{ matrix.react }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-firefox-safari:
@@ -1073,6 +1096,7 @@ jobs:
         TURBOPACK_BUILD=1 NEXT_TEST_MODE=start BROWSER_NAME=safari DEVICE_NAME='iPhone XR' node run-tests.js \
           test/production/prerender-prefetch/index.test.ts
       stepName: 'test-firefox-safari'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   # Manifest generated via: https://gist.github.com/wyattjoh/2ceaebd82a5bcff4819600fd60126431
@@ -1095,6 +1119,7 @@ jobs:
           --timings \
           --type integration
       stepName: 'test-cache-components-integration'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-cache-components-dev:
@@ -1130,6 +1155,7 @@ jobs:
           --type development
       testTimingsArtifact: 'test-timings'
       stepName: 'test-cache-components-dev-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-cache-components-prod:
@@ -1165,6 +1191,7 @@ jobs:
           --type production
       testTimingsArtifact: 'test-timings'
       stepName: 'test-cache-components-prod-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-node-streams-dev:
@@ -1192,6 +1219,7 @@ jobs:
           -g ${{ matrix.group }} \
           --type development
       stepName: 'test-node-streams-dev-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   test-node-streams-prod:
@@ -1219,6 +1247,7 @@ jobs:
           -g ${{ matrix.group }} \
           --type production
       stepName: 'test-node-streams-prod-${{ matrix.group }}'
+      nativeArtifact: 'next-swc-linux'
     secrets: inherit
 
   tests-pass:

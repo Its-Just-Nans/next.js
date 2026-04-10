@@ -85,6 +85,17 @@ on:
         type: string
         default: ''
 
+      nativeArtifact:
+        description: 'Artifact name with pre-built native .node file(s). Skips native build and downloads from this artifact instead.'
+        required: false
+        type: string
+        default: ''
+      uploadNativeArtifact:
+        description: 'Artifact name to upload native .node files to after building.'
+        required: false
+        type: string
+        default: ''
+
       browser:
         description: 'Browser to use for tests'
         required: false
@@ -232,14 +243,14 @@ jobs:
       # local action -> needs to run after checkout
       - name: Install Rust
         uses: ./.github/actions/setup-rust
-        if: ${{ inputs.skipNativeBuild != 'yes' || inputs.needsNextest == 'yes' || inputs.needsRust == 'yes' }}
+        if: ${{ (inputs.skipNativeBuild != 'yes' && inputs.nativeArtifact == '') || inputs.needsNextest == 'yes' || inputs.needsRust == 'yes' }}
 
       - name: Install nextest
         if: ${{ inputs.needsNextest == 'yes' }}
         uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
 
       - run: rustc --version
-        if: ${{ inputs.skipNativeBuild != 'yes' || inputs.needsNextest == 'yes' || inputs.needsRust == 'yes' }}
+        if: ${{ (inputs.skipNativeBuild != 'yes' && inputs.nativeArtifact == '') || inputs.needsNextest == 'yes' || inputs.needsRust == 'yes' }}
 
       - run: corepack prepare --activate yarn@1.22.19 && npm i -g "@napi-rs/cli@${NAPI_CLI_VERSION}"
 
@@ -258,12 +269,28 @@ jobs:
 
       - name: Start sccache
         uses: ./.github/actions/sccache
-        if: ${{ inputs.skipNativeBuild != 'yes' || inputs.needsNextest == 'yes' || inputs.needsRust == 'yes' }}
+        if: ${{ (inputs.skipNativeBuild != 'yes' && inputs.nativeArtifact == '') || inputs.needsNextest == 'yes' || inputs.needsRust == 'yes' }}
         with:
           turbo-token: ${{ secrets.TURBO_REMOTE_CACHE_TOKEN }}
 
+      - name: Download pre-built native binary
+        if: ${{ inputs.nativeArtifact != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.nativeArtifact }}
+          path: packages/next-swc/native/
+
       - run: pnpm dlx turbo@${TURBO_VERSION} run build-native-${{ inputs.rustBuildProfile }} ${TURBO_ARGS} --summarize -- --target ${{ inputs.buildNativeTarget }}
-        if: ${{ inputs.skipNativeBuild != 'yes' }}
+        if: ${{ inputs.skipNativeBuild != 'yes' && inputs.nativeArtifact == '' }}
+
+      - name: Upload native artifact
+        if: ${{ inputs.uploadNativeArtifact != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.uploadNativeArtifact }}
+          path: packages/next-swc/native/next-swc.*.node
+          retention-days: 1
+          compression-level: 0
 
       - name: Upload next-swc artifact
         if: ${{ inputs.uploadSwcArtifact == 'yes' }}

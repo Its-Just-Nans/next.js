@@ -78,22 +78,43 @@ RUN TOOLCHAIN=$(grep 'channel' /tmp/rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Add all 4 Linux rustup targets
+# Add all Linux + Windows rustup targets
 RUN rustup target add \
     x86_64-unknown-linux-gnu \
     aarch64-unknown-linux-gnu \
     x86_64-unknown-linux-musl \
-    aarch64-unknown-linux-musl
+    aarch64-unknown-linux-musl \
+    x86_64-pc-windows-msvc
 
-# Install @napi-rs/cli, cargo-rustflags, and sccache.
-# Use cargo-binstall for sccache (pre-built binary, much faster than compiling).
+# Install @napi-rs/cli, cargo-rustflags, and cargo-xwin globally.
+# cargo-rustflags resolves the effective RUSTFLAGS for a target by querying
+# cargo's own config resolution (handles cfg() predicates, --config overlays).
+# cargo-xwin handles Windows MSVC cross-compilation (downloads SDK, sets CC/linker).
+# Note: sccache is NOT installed here — CI provides a forked version externally.
 RUN npm i -g @napi-rs/cli@2.18.4 && \
-    cargo install cargo-rustflags && \
-    BINSTALL_ARCH=$(uname -m) && \
-    curl -fsSL "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-${BINSTALL_ARCH}-unknown-linux-musl.tgz" | tar xz -C /root/.cargo/bin && \
-    cargo binstall sccache@0.14.0 --no-confirm
+    cargo install cargo-rustflags@0.2.1 && \
+    cargo install cargo-xwin --locked
+
+# Create symlinks for MSVC-flavor LLVM tools needed by cargo-xwin.
+# Use Rust's bundled LLD (v22+) for lld-link — it supports /guard:ehcont
+# which the xwin CRT's loadcfg.obj requires. Ubuntu 20.04's system LLD is
+# too old (v10). rust-lld auto-detects flavor from argv[0] "lld-link".
+# clang-cl is clang in MSVC-compatible mode (same binary, different argv[0]).
+RUN SYSROOT=$(rustc --print sysroot) && \
+    HOST=$(rustc -vV | grep host | cut -d' ' -f2) && \
+    ln -sf "$SYSROOT/lib/rustlib/$HOST/bin/rust-lld" /usr/local/bin/lld-link && \
+    ln -sf llvm-ar /usr/bin/llvm-lib && \
+    ln -sf clang /usr/bin/clang-cl
+
+# Pre-cache MSVC SDK for cargo-xwin so it doesn't re-download on every build.
+# Run a dummy cargo xwin check to trigger the download, then clean up.
+RUN mkdir -p /tmp/_xwin_seed/src && \
+    echo "fn main(){}" > /tmp/_xwin_seed/src/main.rs && \
+    printf '[package]\nname="d"\nversion="0.0.0"\nedition="2021"\n' > /tmp/_xwin_seed/Cargo.toml && \
+    cd /tmp/_xwin_seed && cargo xwin check --target x86_64-pc-windows-msvc && \
+    rm -rf /tmp/_xwin_seed
 
 # Verify installations
-RUN node --version && rustc --version && napi -h > /dev/null && cargo rustflags --help > /dev/null && sccache --version
+RUN node --version && rustc --version && napi -h > /dev/null && cargo rustflags --help > /dev/null
 
 WORKDIR /build
